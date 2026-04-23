@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: <GROUP_NAME>_train_job_scai_jam
+  namespace: scai-jam
+spec:
+  template:
+    spec:
+      containers:
+      - name: <GROUP_NAME>-train-container
+        image: huggingface/transformers-pytorch-gpu:latest
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            # 1. Install dependencies
+            pip install wandb datasets peft accelerate
+
+            # 2. Clone your team's GitHub repository
+            # REPLACE the URL below with your actual repository URL
+            git clone https://github.com/<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>.git temp_repo
+            cd temp_repo
+
+            # 3. Run the training script!
+            echo "Starting training job..."
+            python3 train.py
+        env:
+        # Load HuggingFace and WandB tokens from secrets.yaml
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: team-secrets
+              key: WANDB_API_KEY
+        - name: WANDB_PROJECT
+          value: "scai-jam-2026"
+        - name: WANDB_NAME
+          value: "<GROUP_NAME>-run-1"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: team-secrets
+              key: HF_TOKEN
+        volumeMounts:
+        - name: persistent-vol
+          mountPath: /persistent
+        - mountPath: /dev/shm
+          name: dshm
+        resources:
+          limits:
+            memory: 34Gi
+            cpu: "14"
+            nvidia.com/gpu: "1"
+            ephemeral-storage: 100Gi
+          requests:
+            memory: 32Gi
+            cpu: "12"
+            nvidia.com/gpu: "1"
+            ephemeral-storage: 80Gi
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.product
+                operator: In
+                values:
+                - NVIDIA-GeForce-RTX-3090
+                - NVIDIA-A10
+                - NVIDIA-TITAN-RTX
+                - NVIDIA-RTX-A5000
+      restartPolicy: Never
+  backoffLimit: 0
